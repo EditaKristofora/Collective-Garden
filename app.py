@@ -283,21 +283,18 @@ with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
 
     if supabase is None:
-        st.info("Supabase is offline — meadow data unavailable.")
+        st.info("Supabase is offline — meadow data is not available right now.")
     else:
-        # 1) Load all sessions safely
+        # 1) Load all sessions
         try:
             data = supabase.table("sessions").select("*").execute()
             rows = data.data
         except Exception as e:
-            st.error(f"Could not load meadow: {e}")
+            st.error(f"Could not load meadow data: {e}")
             rows = []
 
-        # Debug: show raw rows
-        st.write("DEBUG rows from Supabase:", rows)
-
         if not rows:
-            st.write("The meadow is still empty 🌱")
+            st.write("The meadow is still empty 🌱\n\nFinish a focus session to plant the first flower.")
         else:
             st.write(f"**Total sessions:** {len(rows)}")
 
@@ -305,65 +302,56 @@ with tab2:
             flower_counts = {}
             for r in rows:
                 code = r.get("flower")
-                flower_counts[code] = flower_counts.get(code, 0) + 1
+                if code in FLOWERS:
+                    flower_counts[code] = flower_counts.get(code, 0) + 1
 
             st.write("### Flower counts")
             for code, count in flower_counts.items():
-                # Show code too for debugging
-                label = FLOWERS.get(code, {"label": code}).get("label", code)
-                st.write(f"- **{label}** (code: `{code}`): {count} sessions")
+                label = FLOWERS[code]["label"]
+                st.write(f"- **{label}**: {count} sessions")
 
-            # 3) Render actual meadow image with flowers
+            # 3) Render the visual meadow
             st.write("### 🌷 Global Meadow")
 
             if meadow_img is None:
                 st.warning("Meadow background image is missing.")
             else:
-                import random
-                from PIL import Image
-
+                # Use RGBA for compositing
                 base = meadow_img.convert("RGBA")
                 W, H = base.size
 
-                # Transparent layer to draw flowers on
+                # Transparent overlay where flowers will be drawn
                 overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
 
-                rng = random.Random(42)
-                pasted_count = 0
-                debug_codes = []
+                n = len(rows)
+                flower_size = 140  # make flowers clearly visible
 
-                for r in rows:
-                    code = r.get("flower")
-                    debug_codes.append(code)
-                    flower_img = flower_images.get(code)
+                if n > 0:
+                    for idx, r in enumerate(rows):
+                        code = r.get("flower")
+                        flower_img = flower_images.get(code)
 
-                    if flower_img is None:
-                        continue
+                        # Skip if we don't have an image for this flower code
+                        if flower_img is None:
+                            continue
 
-                    flower_rgba = flower_img.convert("RGBA")
-                    flower_small = flower_rgba.resize((80, 80))
+                        flower_rgba = flower_img.convert("RGBA")
+                        flower_big = flower_rgba.resize((flower_size, flower_size))
 
-                    max_x = max(1, W - 80)
-                    max_y = max(1, H - 80)
-                    y_min = int(H * 0.4)
-                    if y_min > max_y:
-                        y_min = 0
+                        # Place flowers in a neat row along the bottom of the meadow
+                        center_x = int((idx + 0.5) * W / n)
+                        x = center_x - flower_size // 2
+                        y = H - flower_size - 20  # 20px above the bottom edge
 
-                    x = rng.randint(0, max_x)
-                    y = rng.randint(y_min, max_y)
+                        # Clamp within bounds
+                        x = max(0, min(W - flower_size, x))
+                        y = max(0, min(H - flower_size, y))
 
-                    # Draw onto overlay
-                    overlay.alpha_composite(flower_small, dest=(x, y))
-                    pasted_count += 1
+                        overlay.alpha_composite(flower_big, dest=(x, y))
 
-                st.write("DEBUG flower codes used:", debug_codes)
-                st.write("DEBUG pasted_count:", pasted_count)
-
-                if pasted_count == 0:
-                    st.info("No flowers were drawn — likely no matching images for the stored flower codes.")
-                else:
+                    # Composite overlay onto base meadow
                     combined = Image.alpha_composite(base, overlay)
                     st.image(
                         combined,
-                        caption=f"Your global collective garden 🌱 ({pasted_count} flowers)"
+                        caption=f"Your global collective garden 🌱 ({len(rows)} flowers)"
                     )
