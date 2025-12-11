@@ -102,23 +102,32 @@ FLOWER_CODES = list(FLOWERS.keys())
 @st.cache_resource
 def load_images():
     images = {}
-    meadow_path = os.path.join("assets", "meadow_bg.png")
-    # Load meadow image robustly (handles png/PNG variations)
-meadow_img = None
-possible_meadow_names = ["meadow_bg.png", "meadow_bg.PNG", "meadow_bg.Png"]
 
-for name in possible_meadow_names:
-    path = os.path.join("assets", name)
-    if os.path.exists(path):
-        meadow_img = Image.open(path)
-        break
+    # Robust meadow loading
+    meadow_img = None
+    possible_meadow_names = ["meadow_bg.png", "meadow_bg.PNG", "meadow_bg.Png"]
+    for name in possible_meadow_names:
+        path = os.path.join("assets", name)
+        if os.path.exists(path):
+            meadow_img = Image.open(path)
+            break
 
-
+    # Load all flower images
     for code in FLOWER_CODES:
-        path = os.path.join("assets", f"flower_{code}.png")
-        images[code] = Image.open(path) if os.path.exists(path) else None
+        filename = f"flower_{code}.png"
+        filename_alt = f"flower_{code}.PNG"   # in case cloud cached uppercase
+        path1 = os.path.join("assets", filename)
+        path2 = os.path.join("assets", filename_alt)
+
+        if os.path.exists(path1):
+            images[code] = Image.open(path1)
+        elif os.path.exists(path2):
+            images[code] = Image.open(path2)
+        else:
+            images[code] = None
 
     return meadow_img, images
+
 
 
 meadow_img, flower_images = load_images()
