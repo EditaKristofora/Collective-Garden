@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 import time
 import os
 from supabase import create_client
@@ -303,15 +303,38 @@ with tab2:
                 for f, count in flower_counts.items():
                     st.write(f"- **{FLOWERS[f]['label']}**: {count} sessions")
 
-                st.write("### 🌷 Meadow Preview")
-                previews = []
-                for r in rows[:40]:
-                    img = flower_images.get(r["flower"])
-                    if img:
-                        previews.append(img)
+                st.write("### 🌼 Global Meadow")
 
-                if previews:
-                    st.image(previews, width=90)
+if meadow_img is None:
+    st.warning("Meadow image missing.")
+else:
+    # Convert background to editable
+    meadow = meadow_img.copy()
+
+    # meadow size
+    W, H = meadow.size
+
+    import random
+    rng = random.Random(42)  # fixed seed for consistency
+
+    for r in rows:
+        flower_code = r.get("flower")
+        flower_img = flower_images.get(flower_code)
+
+        if flower_img is None:
+            continue
+
+        # Resize flower smaller for meadow
+        flower_small = flower_img.resize((80, 80)) 
+
+        # Random position on meadow
+        x = rng.randint(0, W - 80)
+        y = rng.randint(int(H * 0.4), H - 80)  # bottom 60% of meadow
+
+        meadow.paste(flower_small, (x, y), flower_small)
+
+    st.image(meadow, caption="Your global collective garden 🌱🌼")
+
 
         except Exception as e:
             st.error(f"Could not load meadow: {e}")
