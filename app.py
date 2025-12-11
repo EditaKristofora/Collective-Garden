@@ -279,12 +279,16 @@ with tab1:
 # -------------------------------
 # TAB 2 — COLLECTIVE MEADOW
 # -------------------------------
+# -------------------------------
+# TAB 2 — COLLECTIVE MEADOW
+# -------------------------------
 with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
 
     if supabase is None:
         st.info("Supabase is offline — meadow data unavailable.")
     else:
+        # 1) Load all sessions safely
         try:
             data = supabase.table("sessions").select("*").execute()
             rows = data.data
@@ -297,42 +301,65 @@ with tab2:
         else:
             st.write(f"**Total sessions:** {len(rows)}")
 
-            # Flower counts
+            # 2) Flower counts
             flower_counts = {}
             for r in rows:
-                f = r.get("flower")
-                flower_counts[f] = flower_counts.get(f, 0) + 1
+                code = r.get("flower")
+                if code in FLOWERS:
+                    flower_counts[code] = flower_counts.get(code, 0) + 1
 
             st.write("### Flower counts")
-            for f, count in flower_counts.items():
-                st.write(f"- **{FLOWERS[f]['label']}**: {count}")
+            for code, count in flower_counts.items():
+                st.write(f"- **{FLOWERS[code]['label']}**: {count} sessions")
 
+            # 3) Render actual meadow image with flowers
             st.write("### 🌷 Global Meadow")
 
-            # Make sure meadow exists
             if meadow_img is None:
-                st.warning("Meadow image missing.")
+                st.warning("Meadow background image is missing.")
             else:
                 import random
-                meadow = meadow_img.copy()
-                W, H = meadow.size
+
+                # Base meadow in RGBA
+                base = meadow_img.convert("RGBA")
+                W, H = base.size
+
+                # Transparent layer to draw flowers on
+                overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+
                 rng = random.Random(42)
+                pasted_count = 0
 
                 for r in rows:
-                    flower_code = r.get("flower")
-                    flower_img = flower_images.get(flower_code)
+                    code = r.get("flower")
+                    flower_img = flower_images.get(code)
 
                     if flower_img is None:
                         continue
 
-                    flower_small = flower_img.resize((80, 80))
+                    # Ensure RGBA and resize
+                    flower_rgba = flower_img.convert("RGBA")
+                    flower_small = flower_rgba.resize((80, 80))
 
-                    x = rng.randint(0, W - 80)
-                    y = rng.randint
+                    # Keep flowers mostly in lower part of meadow
+                    max_x = max(1, W - 80)
+                    max_y = max(1, H - 80)
+                    y_min = int(H * 0.4)
+                    if y_min > max_y:
+                        y_min = 0
 
-                    meadow.paste(flower_small, (x, y))
+                    x = rng.randint(0, max_x)
+                    y = rng.randint(y_min, max_y)
 
-                st.image(meadow, caption="Your global collective garden 🌱🌼")
+                    # Draw onto overlay
+                    overlay.alpha_composite(flower_small, dest=(x, y))
+                    pasted_count += 1
 
-
-
+                if pasted_count == 0:
+                    st.info("No flower images could be placed yet (check asset names).")
+                else:
+                    combined = Image.alpha_composite(base, overlay)
+                    st.image(
+                        combined,
+                        caption=f"Your global collective garden 🌱 ({pasted_count} flowers)"
+                    )
