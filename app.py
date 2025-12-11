@@ -328,9 +328,9 @@ with tab2:
                     flower_small = flower_img.resize((80, 80))
 
                     x = rng.randint(0, W - 80)
-                    y = rng.randint(int(H * 0.4), H - 80)
+                    y = rng.randint
 
-                    meadow.paste(flower_small, (x, y), flower_small)
+                    meadow.paste(flower_small, (x, y))
 
                 st.image(meadow, caption="Your global collective garden 🌱🌼")
 
