@@ -205,8 +205,116 @@ with tab1:
         st.subheader("1. Choose your flower")
 
         selected_code = st.selectbox(
-            "Which f
+            "Which flower matches your focus mood?",
+            options=FLOWER_CODES,
+            format_func=lambda c: FLOWERS[c]["label"]
+        )
 
+        flower_def = FLOWERS[selected_code]
+        st.write(f"**Intention:** {flower_def['intention']}")
+
+        img = flower_images.get(selected_code)
+        if img:
+            st.image(img, width=180)
+
+        if st.button("Start 25-minute session 🌼"):
+            start_session(selected_code)
+            st.rerun()
+
+    else:
+        selected_code = st.session_state.flower_code
+        flower_def = FLOWERS[selected_code]
+        img = flower_images.get(selected_code)
+
+        elapsed = time.time() - st.session_state.start_time
+        remaining = max(POMODORO_SECONDS - elapsed, 0)
+        progress = min(elapsed / POMODORO_SECONDS, 1.0)
+
+        minutes = int(remaining // 60)
+        seconds = int(remaining % 60)
+
+        size = int(FLOWER_MIN_SIZE + (FLOWER_MAX_SIZE - FLOWER_MIN_SIZE) * progress)
+
+        phases = [
+            "Your flower is just waking up.",
+            "Roots are forming quietly.",
+            "Your flower is opening.",
+            "Soft, steady bloom.",
+            "Your flower is glowing 🌼"
+        ]
+        phase = phases[min(int(progress * len(phases)), len(phases) - 1)]
+
+        block = int(elapsed // BLOCK_SECONDS)
+        tips = flower_def.get("tips") or GENERIC_TIPS
+        tip = tips[block % len(tips)]
+
+        st.subheader(f"{flower_def['label']} – Focus Session")
+
+        if meadow_img:
+            st.image(meadow_img)
+
+        st.markdown(f"### ⏳ {minutes:02d}:{seconds:02d}")
+        st.progress(progress)
+
+        if img:
+            st.image(img, width=size)
+
+        st.caption(phase)
+        st.info(tip)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("End session early"):
+                end_session(early=True)
+                st.rerun()
+        with col2:
+            if remaining <= 0:
+                end_session(early=False)
+                st.balloons()
+                st.rerun()
+            else:
+                time.sleep(1)
+                st.rerun()
+
+# -------------------------------
+# TAB 2 — COLLECTIVE MEADOW
+# -------------------------------
+with tab2:
+    st.subheader("🌼 Collective Meadow — Shared Blossoms")
+
+    if supabase is None:
+        st.info("Supabase is offline — meadow data unavailable.")
+    else:
+        try:
+            data = supabase.table("sessions").select("*").execute()
+            rows = data.data
+
+            if not rows:
+                st.write("The meadow is still empty 🌱")
+            else:
+                st.write(f"**Total sessions:** {len(rows)}")
+
+                flower_counts = {}
+                for r in rows:
+                    f = r["flower"]
+                    flower_counts[f] = flower_counts.get(f, 0) + 1
+
+                st.write("### Flower Counts")
+                for f, count in flower_counts.items():
+                    st.write(f"- **{FLOWERS[f]['label']}**: {count} sessions")
+
+                st.write("### 🌷 Meadow Preview")
+                previews = []
+                for r in rows[:40]:
+                    img = flower_images.get(r["flower"])
+                    if img:
+                        previews.append(img)
+
+                if previews:
+                    st.image(previews, width=90)
+
+        except Exception as e:
+            st.error(f"Could not load meadow: {e}")
 
 
 
