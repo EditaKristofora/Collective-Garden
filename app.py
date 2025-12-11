@@ -288,59 +288,51 @@ with tab2:
         try:
             data = supabase.table("sessions").select("*").execute()
             rows = data.data
-
-            if not rows:
-                st.write("The meadow is still empty 🌱")
-            else:
-                st.write(f"**Total sessions:** {len(rows)}")
-
-                flower_counts = {}
-                for r in rows:
-                    f = r["flower"]
-                    flower_counts[f] = flower_counts.get(f, 0) + 1
-
-                st.write("### Flower Counts")
-                for f, count in flower_counts.items():
-                    st.write(f"- **{FLOWERS[f]['label']}**: {count} sessions")
-
-                st.write("### 🌼 Global Meadow")
-
-if meadow_img is None:
-    st.warning("Meadow image missing.")
-else:
-    # Convert background to editable
-    meadow = meadow_img.copy()
-
-    # meadow size
-    W, H = meadow.size
-
-    import random
-    rng = random.Random(42)  # fixed seed for consistency
-
-    for r in rows:
-        flower_code = r.get("flower")
-        flower_img = flower_images.get(flower_code)
-
-        if flower_img is None:
-            continue
-
-        # Resize flower smaller for meadow
-        flower_small = flower_img.resize((80, 80)) 
-
-        # Random position on meadow
-        x = rng.randint(0, W - 80)
-        y = rng.randint(int(H * 0.4), H - 80)  # bottom 60% of meadow
-
-        meadow.paste(flower_small, (x, y), flower_small)
-
-    st.image(meadow, caption="Your global collective garden 🌱🌼")
-
-
         except Exception as e:
             st.error(f"Could not load meadow: {e}")
+            rows = []
 
+        if not rows:
+            st.write("The meadow is still empty 🌱")
+        else:
+            st.write(f"**Total sessions:** {len(rows)}")
 
+            # Flower counts
+            flower_counts = {}
+            for r in rows:
+                f = r.get("flower")
+                flower_counts[f] = flower_counts.get(f, 0) + 1
 
+            st.write("### Flower counts")
+            for f, count in flower_counts.items():
+                st.write(f"- **{FLOWERS[f]['label']}**: {count}")
+
+            st.write("### 🌷 Global Meadow")
+
+            # Make sure meadow exists
+            if meadow_img is None:
+                st.warning("Meadow image missing.")
+            else:
+                import random
+                meadow = meadow_img.copy()
+                W, H = meadow.size
+                rng = random.Random(42)
+
+                for r in rows:
+                    flower_code = r.get("flower")
+                    flower_img = flower_images.get(flower_code)
+
+                    if flower_img is None:
+                        continue
+
+                    flower_small = flower_img.resize((80, 80))
+
+                    x = rng.randint(0, W - 80)
+                    y = rng.randint(int(H * 0.4), H - 80)
+
+                    meadow.paste(flower_small, (x, y), flower_small)
+
+                st.image(meadow, caption="Your global collective garden 🌱🌼")
 
 
 
