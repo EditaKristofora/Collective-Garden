@@ -306,3 +306,65 @@ with tab2:
                     flower_counts[code] = flower_counts.get(code, 0) + 1
 
             st.write("### Flower counts")
+            for code, count in flower_counts.items():
+                label = FLOWERS[code]["label"]
+                st.write(f"- **{label}**: {count} sessions")
+
+            # 3) Render the visual meadow
+            st.write("### 🌷 Global Meadow")
+
+            if meadow_img is None:
+                st.warning("Meadow background image is missing.")
+            else:
+                import random
+                from PIL import Image
+
+                # Convert meadow to RGBA
+                base = meadow_img.convert("RGBA")
+                W, H = base.size
+
+                # Where we draw flowers
+                overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+
+                rng = random.Random(42)
+
+                # 🌸 MAKE FLOWERS MUCH BIGGER
+                flower_size = 180   # <---- increase size here
+
+                pasted_count = 0
+
+                # Only use rows that have a valid flower image
+                valid_rows = [r for r in rows if flower_images.get(r.get("flower"))]
+
+                for r in valid_rows:
+                    code = r.get("flower")
+                    flower_img = flower_images.get(code)
+
+                    if flower_img is None:
+                        continue
+
+                    flower_rgba = flower_img.convert("RGBA")
+                    flower_big = flower_rgba.resize((flower_size, flower_size))
+
+                    # Random scatter — totally inside bounds
+                    max_x = W - flower_size
+                    max_y = H - flower_size
+
+                    # Lower 60% of meadow only
+                    y_min = int(H * 0.40)
+                    y_max = max_y
+
+                    x = rng.randint(0, max_x)
+                    y = rng.randint(y_min, y_max)
+
+                    overlay.alpha_composite(flower_big, dest=(x, y))
+                    pasted_count += 1
+
+                if pasted_count == 0:
+                    st.info("No flowers were drawn — likely no matching images for the stored codes.")
+                else:
+                    combined = Image.alpha_composite(base, overlay)
+                    st.image(
+                        combined,
+                        caption=f"Your global collective garden 🌱 ({pasted_count} flowers)"
+                    )
