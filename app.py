@@ -4,6 +4,14 @@ import time
 import os
 from supabase import create_client
 
+
+# DEBUG BLOCK – you can remove later
+st.write("DEBUG – st.secrets:", st.secrets)
+try:
+    st.write("DEBUG – assets files:", os.listdir("assets"))
+except Exception as e:
+    st.write("DEBUG – error listing assets:", e)
+
 # -------------------------------
 # CONFIG
 # -------------------------------
