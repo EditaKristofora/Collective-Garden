@@ -103,7 +103,16 @@ FLOWER_CODES = list(FLOWERS.keys())
 def load_images():
     images = {}
     meadow_path = os.path.join("assets", "meadow_bg.png")
-    meadow_img = Image.open(meadow_path) if os.path.exists(meadow_path) else None
+    # Load meadow image robustly (handles png/PNG variations)
+meadow_img = None
+possible_meadow_names = ["meadow_bg.png", "meadow_bg.PNG", "meadow_bg.Png"]
+
+for name in possible_meadow_names:
+    path = os.path.join("assets", name)
+    if os.path.exists(path):
+        meadow_img = Image.open(path)
+        break
+
 
     for code in FLOWER_CODES:
         path = os.path.join("assets", f"flower_{code}.png")
