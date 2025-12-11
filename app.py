@@ -2,15 +2,6 @@ import streamlit as st
 from PIL import Image
 import time
 import os
-from supabase import create_client
-
-
-# DEBUG BLOCK – you can remove later
-st.write("DEBUG – st.secrets:", st.secrets)
-try:
-    st.write("DEBUG – assets files:", os.listdir("assets"))
-except Exception as e:
-    st.write("DEBUG – error listing assets:", e)
 
 # -------------------------------
 # CONFIG
@@ -18,11 +9,8 @@ except Exception as e:
 POMODORO_MINUTES = 25
 POMODORO_SECONDS = POMODORO_MINUTES * 60
 
-# growth size (in pixels) from start → end
 FLOWER_MIN_SIZE = 120
 FLOWER_MAX_SIZE = 280
-
-# 5-minute blocks for tips (0–5, 5–10, 10–15, 15–20, 20–25)
 BLOCK_SECONDS = 5 * 60
 
 # -------------------------------
@@ -109,60 +97,6 @@ FLOWER_CODES = list(FLOWERS.keys())
 
 
 # -------------------------------
-# SUPABASE
-# -------------------------------
-@st.cache_resource
-def get_supabase_client():
-    try:
-        url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
-    except Exception:
-        st.warning("Supabase secrets are not set. Collective meadow will not be saved.")
-        return None
-    return create_client(url, key)
-
-
-supabase = get_supabase_client()
-
-
-def log_session(flower_code: str, duration_minutes: int, completed: bool):
-    """Save a finished session to Supabase."""
-    if not supabase:
-        return  # no backend configured
-    if duration_minutes <= 0:
-        return
-    supabase.table("sessions").insert({
-        "flower_code": flower_code,
-        "duration_minutes": duration_minutes,
-        "completed": completed
-    }).execute()
-
-
-def get_collective_stats():
-    """Read sessions from Supabase and aggregate per flower."""
-    if not supabase:
-        return None
-
-    res = supabase.table("sessions").select("flower_code, duration_minutes").execute()
-    data = res.data or []
-
-    stats = {code: {"sessions": 0, "minutes": 0} for code in FLOWER_CODES}
-    total_sessions = 0
-    total_minutes = 0
-
-    for row in data:
-        code = row["flower_code"]
-        mins = row.get("duration_minutes") or 0
-        if code in stats:
-            stats[code]["sessions"] += 1
-            stats[code]["minutes"] += mins
-            total_sessions += 1
-            total_minutes += mins
-
-    return stats, total_sessions, total_minutes
-
-
-# -------------------------------
 # IMAGE LOADING
 # -------------------------------
 @st.cache_resource
@@ -191,7 +125,7 @@ if "start_time" not in st.session_state:
     st.session_state.start_time = None
 
 if "flower_code" not in st.session_state:
-    st.session_state.flower_code = "bluebell"  # default
+    st.session_state.flower_code = "bluebell"
 
 
 # -------------------------------
@@ -202,9 +136,6 @@ st.set_page_config(
     page_icon="🌱",
     layout="centered"
 )
-
-# Sidebar navigation
-mode = st.sidebar.radio("Navigation", ["Focus session", "Collective meadow"])
 
 st.title("🌱 Collective Garden")
 st.caption(
@@ -218,14 +149,9 @@ def start_session(selected_flower: str):
     st.session_state.flower_code = selected_flower
 
 
-def end_session(elapsed_seconds: float, early=False):
-    """End local session + log to Supabase."""
-    minutes = int(round(elapsed_seconds / 60))
-    log_session(st.session_state.flower_code, minutes, completed=not early)
-
+def end_session(early=False):
     st.session_state.session_active = False
     st.session_state.start_time = None
-
     if early:
         st.success("You ended the session. Even short moments of focus still count as growth 💚")
     else:
@@ -233,145 +159,97 @@ def end_session(elapsed_seconds: float, early=False):
 
 
 # -------------------------------
-# MODE: FOCUS SESSION
+# HOME / SELECTION
 # -------------------------------
-if mode == "Focus session":
+if not st.session_state.session_active:
+    st.subheader("1. Choose your flower (intention)")
 
-    # HOME STATE
-    if not st.session_state.session_active:
-        st.subheader("1. Choose your flower (intention)")
+    selected_code = st.selectbox(
+        "Which flower matches your focus mood today?",
+        options=FLOWER_CODES,
+        format_func=lambda c: FLOWERS[c]["label"]
+    )
 
-        selected_code = st.selectbox(
-            "Which flower matches your focus mood today?",
-            options=FLOWER_CODES,
-            format_func=lambda c: FLOWERS[c]["label"]
-        )
+    flower_def = FLOWERS[selected_code]
+    st.write(f"**Intention:** {flower_def['intention']}")
 
-        flower_def = FLOWERS[selected_code]
-        st.write(f"**Intention:** {flower_def['intention']}")
+    img = flower_images.get(selected_code)
+    if img:
+        st.image(img, width=180, caption=FLOWERS[selected_code]["label"])
 
-        img = flower_images.get(selected_code)
-        if img:
-            st.image(img, width=180, caption=FLOWERS[selected_code]["label"])
-        else:
-            st.info("Flower image not found yet – please add it to the assets folder.")
+    st.markdown("### 2. Start a 25-minute focus session")
 
-        st.markdown("### 2. Start a 25-minute focus session")
+    if st.button("Start 25-minute session 🌼"):
+        start_session(selected_code)
+        st.rerun()
 
-        if st.button("Start 25-minute session 🌼"):
-            start_session(selected_code)
-            st.rerun()
+# -------------------------------
+# ACTIVE SESSION
+# -------------------------------
+else:
+    selected_code = st.session_state.flower_code
+    flower_def = FLOWERS[selected_code]
+    img = flower_images.get(selected_code)
 
-    # ACTIVE SESSION
-    else:
-        selected_code = st.session_state.flower_code
-        flower_def = FLOWERS[selected_code]
-        img = flower_images.get(selected_code)
+    elapsed = time.time() - st.session_state.start_time
+    remaining = max(POMODORO_SECONDS - elapsed, 0)
+    progress = min(elapsed / POMODORO_SECONDS, 1.0)
 
-        if not img:
-            st.error("Flower image not found. Please check the assets folder.")
-            st.stop()
+    minutes_left = int(remaining // 60)
+    seconds_left = int(remaining % 60)
 
-        elapsed = time.time() - st.session_state.start_time
-        remaining = max(POMODORO_SECONDS - elapsed, 0)
-        progress = min(elapsed / POMODORO_SECONDS, 1.0)
+    current_size = int(
+        FLOWER_MIN_SIZE + (FLOWER_MAX_SIZE - FLOWER_MIN_SIZE) * progress
+    )
 
-        minutes_left = int(remaining // 60)
-        seconds_left = int(remaining % 60)
+    phases = [
+        "Your flower is just waking up.",
+        "Roots are forming quietly beneath the surface.",
+        "Your flower is opening gently.",
+        "Your focus is in soft, steady bloom.",
+        "Your flower is glowing with your attention."
+    ]
+    phase_index = min(int(progress * len(phases)), len(phases) - 1)
+    phase_text = phases[phase_index]
 
-        current_size = int(
-            FLOWER_MIN_SIZE + (FLOWER_MAX_SIZE - FLOWER_MIN_SIZE) * progress
-        )
+    block_index = int(elapsed // BLOCK_SECONDS)
+    tips_source = flower_def.get("tips") or GENERIC_TIPS
+    tip_text = tips_source[block_index % len(tips_source)]
 
-        phases = [
-            "Your flower is just waking up.",
-            "Roots are forming quietly beneath the surface.",
-            "Your flower is opening gently.",
-            "Your focus is in soft, steady bloom.",
-            "Your flower is glowing with your attention."
-        ]
-        phase_index = min(int(progress * len(phases)), len(phases) - 1)
-        phase_text = phases[phase_index]
+    st.subheader(f"{flower_def['label']} – 25-minute focus")
 
-        block_index = int(elapsed // BLOCK_SECONDS)
-        tips_source = flower_def.get("tips") or GENERIC_TIPS
-        tip_text = tips_source[block_index % len(tips_source)]
+    if meadow_img:
+        st.image(meadow_img)
 
-        st.subheader(f"{flower_def['label']} – 25-minute focus")
+    st.markdown(
+        f"### ⏳ {minutes_left:02d}:{seconds_left:02d} "
+        f"(total {POMODORO_MINUTES} min)"
+    )
+    st.progress(progress)
 
-        if meadow_img:
-            st.image(meadow_img)
-
-        st.markdown(
-            f"### ⏳ {minutes_left:02d}:{seconds_left:02d} "
-            f"(total {POMODORO_MINUTES} min)"
-        )
-        st.progress(progress)
-
+    if img:
         st.image(img, width=current_size)
-        st.caption(phase_text)
+    st.caption(phase_text)
 
-        st.markdown(f"**Intention:** {flower_def['intention']}")
-        st.info(tip_text)
+    st.markdown(f"**Intention:** {flower_def['intention']}")
+    st.info(tip_text)
 
+    col1, col2 = st.columns(2)
+    with col1:
         if st.button("End session early"):
-            end_session(elapsed, early=True)
+            end_session(early=True)
             st.rerun()
-
+    with col2:
         if remaining <= 0:
-            end_session(elapsed, early=False)
+            end_session(early=False)
             st.balloons()
             st.rerun()
         else:
             time.sleep(1)
             st.rerun()
 
-# -------------------------------
-# MODE: COLLECTIVE MEADOW
-# -------------------------------
-else:
-    st.subheader("🌍 Collective meadow")
-
-    if meadow_img:
-        st.image(meadow_img)
-
-    if not supabase:
-        st.info(
-            "Collective stats are not available yet because Supabase is not configured. "
-            "Add your Supabase URL and key in `.streamlit/secrets.toml` and on Streamlit Cloud."
-        )
-    else:
-        result = get_collective_stats()
-        if not result:
-            st.info("No sessions have been logged yet. Be the first to let a flower bloom! 🌱")
-        else:
-            stats, total_sessions, total_minutes = result
-
-            st.markdown(
-    f"""
-**Total focused minutes:** {total_minutes}  
-**Total completed sessions:** {total_sessions}
-"""
-)
 
 
-            st.markdown("### Focus by flower")
-
-            for code in FLOWER_CODES:
-                flower = FLOWERS[code]
-                s = stats[code]
-                img = flower_images.get(code)
-
-                with st.container():
-                    cols = st.columns([1, 3])
-                    with cols[0]:
-                        if img:
-                            st.image(img, width=80)
-                    with cols[1]:
-                        st.markdown(f"**{flower['label']}**")
-                        st.write(f"Sessions: {s['sessions']}")
-                        st.write(f"Minutes focused: {s['minutes']}")
-                    st.markdown("---")
 
 
 
