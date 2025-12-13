@@ -1,3 +1,4 @@
+import traceback
 import streamlit as st
 from PIL import Image, ImageDraw
 import time
@@ -222,14 +223,15 @@ if "flower_code" not in st.session_state:
 # -------------------------------
 # PAGE CONFIG
 # -------------------------------
-st.set_page_config(
-    page_title="Collective Garden",
-    page_icon="🌱",
-    layout="centered"
+def main():
+    st.set_page_config(
+        page_title="Collective Garden",
+        page_icon="🌱",
+        layout="centered"
 )
 
-st.title("🌱 Collective Garden")
-st.caption("Grow your focus, bloom together.")
+    st.title("🌱 Collective Garden")
+    st.caption("Grow your focus, bloom together.")
 # -------------------------------
 # USER IDENTITY (PERSIST VIA URL)
 # -------------------------------
@@ -587,3 +589,18 @@ with tab2:
 
                 combined = Image.alpha_composite(base, overlay)
                 st.image(combined, caption=f"Collective Garden 🌱 ({pasted_count} blooms)")
+
+def main():
+    # 👇 Move ALL your existing app code that renders UI into here
+    # (from st.set_page_config(...) down to tab1/tab2 rendering)
+    pass
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        import streamlit as st
+        st.error("Crash on Streamlit Cloud — traceback below:")
+        st.code(traceback.format_exc())
+        st.stop()
