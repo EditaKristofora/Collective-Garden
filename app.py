@@ -147,6 +147,19 @@ def _safe_open_image(path: str):
         return None
 
 
+from io import BytesIO
+
+def _safe_open_image(path: str):
+    """Load image bytes and detach from file handle (Streamlit Cloud safe)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+        img = Image.open(BytesIO(data))
+        img.load()
+        return img.convert("RGBA").copy()
+    except Exception:
+        return None
+
 @st.cache_data
 def load_images():
     # Meadow
@@ -158,40 +171,32 @@ def load_images():
             if meadow_img is not None:
                 break
 
-    # Flower stages: flower_images[code][stage]
+    # Flowers by stage: flower_images[code][stage]
     flower_images = {}
     for code in FLOWER_CODES:
         stages = {}
         for stage in range(1, 5):
             p1 = os.path.join("assets", f"flower_{code}_stage{stage}.png")
             p2 = os.path.join("assets", f"flower_{code}_stage{stage}.PNG")
-
-            img = None
-            if os.path.exists(p1):
-                img = _safe_open_image(p1)
-            elif os.path.exists(p2):
-                img = _safe_open_image(p2)
-
-            if img is not None:
-                stages[stage] = img
-
-        # Optional fallback to old single-file style
-        if not stages:
-            b1 = os.path.join("assets", f"flower_{code}.png")
-            b2 = os.path.join("assets", f"flower_{code}.PNG")
-            if os.path.exists(b1):
-                img = _safe_open_image(b1)
+            path = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
+            if path:
+                img = _safe_open_image(path)
                 if img is not None:
-                    stages[4] = img
-            elif os.path.exists(b2):
-                img = _safe_open_image(b2)
+                    stages[stage] = img
+
+        # Fallback to single image
+        if not stages:
+            p1 = os.path.join("assets", f"flower_{code}.png")
+            p2 = os.path.join("assets", f"flower_{code}.PNG")
+            path = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
+            if path:
+                img = _safe_open_image(path)
                 if img is not None:
                     stages[4] = img
 
         flower_images[code] = stages
 
     return meadow_img, flower_images
-
 
 meadow_img, flower_images = load_images()
 
@@ -516,74 +521,93 @@ with tab1:
 with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
 
-    user_name = (st.session_state.user_name or "Anonymous").strip() or "Anonymous"
+    # --- 0) Meadow must exist ---
+    if meadow_img is None:
+        st.error("Meadow image NOT loaded. Expected assets/meadow_bg.png")
+        if os.path.isdir("assets"):
+            st.write("Assets:", os.listdir("assets"))
+        st.stop()
+
+    import random
+    from PIL import Image
+
+    base = meadow_img.convert("RGBA")
+    W, H = base.size
+
+    # --- 1) Load rows (or fall back to empty) ---
+    rows = []
+    supabase_error = None
 
     if supabase is None:
-        st.info("Supabase is offline — meadow data is not available right now.")
+        supabase_error = "Supabase is offline — collective meadow won't update right now."
     else:
         try:
-            data = supabase.table("sessions").select("*").execute()
-            rows = data.data or []
+            rows = supabase.table("sessions").select("*").execute().data or []
         except Exception as e:
-            st.error(f"Could not load meadow data: {e}")
+            supabase_error = f"Could not load meadow data: {e}"
             rows = []
 
-        if not rows:
-            st.write("The meadow is still empty 🌱\n\nFinish a full 25-minute session to plant the first flower.")
-        else:
-            # Personal vs collective
-            your_rows = [r for r in rows if (r.get("user_name") or "Anonymous") == user_name]
+    # --- 2) Personal vs collective counts (always show) ---
+    user_name = (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous"
 
-            st.write(f"**Your completed blooms ({user_name}):** {len(your_rows)}")
-            st.write(f"**Total collective blooms:** {len(rows)}")
+    def norm_name(x):
+        return (x or "Anonymous").strip() or "Anonymous"
 
-            # Collective flower counts
-            flower_counts = {}
-            for r in rows:
-                code = r.get("flower")
-                if code in FLOWERS:
-                    flower_counts[code] = flower_counts.get(code, 0) + 1
+    your_rows = [r for r in rows if norm_name(r.get("user_name")) == user_name]
 
-            st.write("### 🌸 Collective flower counts")
-            for code, count in flower_counts.items():
-                st.write(f"- **{FLOWERS[code]['label']}**: {count}")
+    st.markdown(
+        f"""
+**Your completed blooms ({user_name}):** {len(your_rows)}  
+**Total collective blooms:** {len(rows)}
+"""
+    )
 
-            st.write("### 🌷 Global Meadow")
+    if supabase_error:
+        st.info(supabase_error)
 
-            if meadow_img is None:
-                st.warning("Meadow background image is missing.")
-            else:
-                import random
-                from PIL import Image
+    # --- 3) Draw flowers overlay (0 flowers is fine) ---
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rng = random.Random(42)  # deterministic scatter
 
-                base = meadow_img.convert("RGBA")
-                W, H = base.size
-                overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    flower_size = 220
+    max_x = max(0, W - flower_size)
+    max_y = max(0, H - flower_size)
+    y_min = int(H * 0.40)  # lower area only for "ground"
 
-                rng = random.Random(42)
-                flower_size = 180
-                pasted_count = 0
+    def row_flower_code(r: dict):
+        # Support both schemas: flower_code or flower
+        return r.get("flower_code") or r.get("flower")
 
-                # Use ONLY stage 4 for the collective meadow
-                for r in rows:
-                    code = r.get("flower")
-                    stages = flower_images.get(code, {})
-                    flower_img = stages.get(4)
+    pasted = 0
+    for r in rows:
+        code = row_flower_code(r)
+        if not code:
+            continue
 
-                    if flower_img is None:
-                        continue
+        stages = flower_images.get(code, {})
+        bloom = stages.get(4)  # fully bloomed stage
+        if bloom is None:
+            continue
 
-                    flower_big = flower_img.convert("RGBA").resize((flower_size, flower_size))
+        bloom_rgba = bloom.convert("RGBA").resize((flower_size, flower_size))
+        x = rng.randint(0, max_x) if max_x > 0 else 0
+        y = rng.randint(y_min, max_y) if max_y >= y_min else y_min
 
-                    max_x = max(0, W - flower_size)
-                    max_y = max(0, H - flower_size)
-                    y_min = int(H * 0.40)
+        overlay.alpha_composite(bloom_rgba, dest=(x, y))
+        pasted += 1
 
-                    x = rng.randint(0, max_x) if max_x > 0 else 0
-                    y = rng.randint(y_min, max_y) if max_y >= y_min else y_min
+    combined_rgba = Image.alpha_composite(base, overlay)
 
-                    overlay.alpha_composite(flower_big, dest=(x, y))
-                    pasted_count += 1
+    # --- 4) Flatten RGBA so transparency doesn't turn black on display ---
+    combined_rgb = Image.new("RGB", combined_rgba.size, (255, 255, 255))
+    combined_rgb.paste(combined_rgba, mask=combined_rgba.split()[-1])  # alpha mask
 
-                combined = Image.alpha_composite(base, overlay)
-                st.image(combined, caption=f"Collective Garden 🌱 ({pasted_count} blooms)")
+    # --- 5) Show ONE meadow only (combined) ---
+    st.image(
+        combined_rgb,
+        use_container_width=True,
+        caption=f"🌷 Global Meadow ({pasted} blooms drawn)"
+    )
+
+    if not rows:
+        st.info("The meadow is still empty 🌱 Finish a full 25-minute session to plant the first bloom.")
