@@ -586,32 +586,20 @@ with tab1:
 # -------------------------------
 with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
-    from streamlit_autorefresh import st_autorefresh
+    st.caption("Tip: click **Load / Refresh meadow** to update the global garden.")
 
-    if HAS_AUTOREFRESH:
-        st_autorefresh(interval=15_000, key="global_meadow_refresh")
-        st.caption("🌍 Global meadow updates every 15 seconds")
-    else:
-        st.caption("🌍 Auto-refresh unavailable (showing manual refresh)")
-        if st.button("🔄 Refresh meadow"):
-            st.rerun()
-
-
-
-    # --- 0) Meadow must exist ---
+    # --- Meadow must exist ---
     if meadow_img is None:
         st.error("Meadow image NOT loaded. Expected assets/meadow_bg.png")
-        if os.path.isdir("assets"):
-            st.write("Assets:", os.listdir("assets"))
         st.stop()
 
-    import random
     from PIL import Image
+    import random
 
     base = meadow_img.convert("RGBA")
     W, H = base.size
 
-    # --- 1) Load rows safely from Supabase ---
+    # --- Load rows safely (lightweight, ok to do every run) ---
     rows = []
     supabase_error = None
 
@@ -619,12 +607,21 @@ with tab2:
         supabase_error = "Supabase is offline — global meadow won't update right now."
     else:
         try:
-            rows = supabase.table("sessions").select("*").execute().data or []
+            # limit rows so Cloud doesn't blow up
+            rows = (
+                supabase.table("sessions")
+                .select("*")
+                .order("timestamp", desc=True)
+                .limit(250)
+                .execute()
+                .data
+                or []
+            )
         except Exception as e:
-            supabase_error = f"Supabase read failed (showing empty meadow): {e}"
+            supabase_error = f"Supabase read failed: {e}"
             rows = []
 
-    # --- 2) Personal vs collective counts ---
+    # --- Counts (always show) ---
     user_name = (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous"
 
     def norm_name(x):
@@ -635,31 +632,34 @@ with tab2:
     st.markdown(
         f"""
 **Your completed blooms ({user_name}):** {len(your_rows)}  
-**Total collective blooms:** {len(rows)}
+**Total collective blooms (last 250):** {len(rows)}
 """
     )
-
     if supabase_error:
         st.info(supabase_error)
 
-    # --- 3) Draw flowers overlay (0 flowers is fine) ---
-    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    rng = random.Random(42)  # deterministic scatter (stable positions)
+    # --- Lazy render: only do heavy PIL compositing when user asks ---
+    if not st.button("🌷 Load / Refresh meadow"):
+        st.info("Click **Load / Refresh meadow** to render the meadow image.")
+        st.stop()
 
-    flower_size = 220  # bigger blooms
+    # --- Heavy render starts here ---
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    rng = random.Random(42)
+
+    flower_size = 220
     max_x = max(0, W - flower_size)
     max_y = max(0, H - flower_size)
-    y_min = int(H * 0.40)  # lower 60% of meadow for "ground"
+    y_min = int(H * 0.40)
 
     pasted = 0
-
     for r in rows:
-        code = r.get("flower")  # your table column name is "flower"
+        code = r.get("flower")  # your column name
         if not code:
             continue
 
         stages = flower_images.get(code, {})
-        bloom = stages.get(4)  # fully bloomed stage image
+        bloom = stages.get(4)  # stage4
         if bloom is None:
             continue
 
@@ -673,15 +673,14 @@ with tab2:
 
     combined_rgba = Image.alpha_composite(base, overlay)
 
-    # --- 4) Flatten RGBA (prevents black background) ---
+    # Flatten RGBA to avoid black background
     combined_rgb = Image.new("RGB", combined_rgba.size, (255, 255, 255))
-    combined_rgb.paste(combined_rgba, mask=combined_rgba.split()[-1])  # alpha mask
+    combined_rgb.paste(combined_rgba, mask=combined_rgba.split()[-1])
 
-    # --- 5) Show ONE global meadow only ---
     st.image(
         combined_rgb,
         width="stretch",
-        caption=f"🌷 Global Meadow ({pasted} blooms drawn)"
+        caption=f"🌍 Global Meadow ({pasted} blooms drawn)"
     )
 
     if not rows:
