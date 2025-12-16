@@ -1,10 +1,22 @@
-import streamlit as st
-from PIL import Image, ImageDraw
-import time
 import os
-from supabase import create_client
-import traceback
+import time
+import random
+from io import BytesIO
 
+import streamlit as st
+from PIL import Image
+from supabase import create_client
+
+
+# ------------------------------------------------------------
+# PAGE CONFIG (must be the first Streamlit call)
+# ------------------------------------------------------------
+st.set_page_config(page_title="Collective Garden", page_icon="🌱", layout="centered")
+
+
+# ------------------------------------------------------------
+# OPTIONAL: client-side auto-refresh (safe Pomodoro ticking)
+# ------------------------------------------------------------
 try:
     from streamlit_autorefresh import st_autorefresh
     HAS_AUTOREFRESH = True
@@ -12,44 +24,20 @@ except Exception:
     HAS_AUTOREFRESH = False
 
 
-# -------------------------------
-# SUPABASE CLIENT
-# -------------------------------
-@st.cache_resource
-def get_supabase():
-    try:
-        url = st.secrets["supabase"]["url"]
-        key = st.secrets["supabase"]["key"]
-        return create_client(url, key)
-    except Exception:
-        return None
-
-supabase = get_supabase()
-
-def safe_insert_session(payload: dict) -> bool:
-    """Never crash the app if Supabase is flaky."""
-    if supabase is None:
-        return False
-    try:
-        supabase.table("sessions").insert(payload).execute()
-        return True
-    except Exception as e:
-        st.warning(f"Supabase insert failed (non-fatal): {e}")
-        return False
-
-# -------------------------------
+# ------------------------------------------------------------
 # CONFIG
-# -------------------------------
+# ------------------------------------------------------------
 POMODORO_MINUTES = 25
 POMODORO_SECONDS = POMODORO_MINUTES * 60
 
 FLOWER_MIN_SIZE = 120
 FLOWER_MAX_SIZE = 280
-BLOCK_SECONDS = 5 * 60  # New tip every 5 minutes
+BLOCK_SECONDS = 5 * 60  # tips every 5 minutes
 
-# -------------------------------
-# FLOWER DEFINITIONS
-# -------------------------------
+
+# ------------------------------------------------------------
+# FLOWERS
+# ------------------------------------------------------------
 FLOWERS = {
     "bluebell": {
         "label": "Bluebell – Calm Focus",
@@ -59,7 +47,7 @@ FLOWERS = {
             "You don’t have to be fast; calm, steady focus is still progress.",
             "If your mind wanders, gently bring it back, like guiding a soft bell sound.",
             "Relax your shoulders and jaw. Calm focus lives in a relaxed body.",
-            "Tiny pockets of calm like this session help your nervous system feel safer."
+            "Tiny pockets of calm like this session help your nervous system feel safer.",
         ],
     },
     "blossom": {
@@ -70,7 +58,7 @@ FLOWERS = {
             "Notice one tiny detail you enjoy about what you’re creating right now.",
             "Let ideas come without judging them — you can tidy them up later.",
             "A short stretch or sip of water can gently reset your creative energy.",
-            "Your imagination is a garden. You’re watering it just by showing up."
+            "Your imagination is a garden. You’re watering it just by showing up.",
         ],
     },
     "sunflower": {
@@ -80,8 +68,8 @@ FLOWERS = {
             "Sunflowers turn toward the sun — today, turn toward what supports you.",
             "You don’t have to feel 100% ready to take a small step.",
             "Your past efforts are roots you can stand on, not proof you’ll fail.",
-            "Confidence can be quiet: just choosing to keep going is already brave.",
-            "Even if nobody sees this work, it still matters that you did it."
+            "Confidence can be quiet: choosing to keep going is already brave.",
+            "Even if nobody sees this work, it still matters that you did it.",
         ],
     },
     "lavender": {
@@ -92,7 +80,7 @@ FLOWERS = {
             "You’re allowed to move slowly and still call it progress.",
             "Notice one place in your body you can soften right now.",
             "You don’t have to earn rest with productivity. You deserve both.",
-            "Even if today feels messy, this moment of peace still counts."
+            "Even if today feels messy, this moment of peace still counts.",
         ],
     },
     "daisy": {
@@ -103,7 +91,7 @@ FLOWERS = {
             "You’re not behind; you’re just starting from where you are now.",
             "Tiny steps are kinder and more sustainable than huge pushes.",
             "You can restart this session as many times as you need. That’s not failure.",
-            "Today’s you knows more than yesterday’s you. That’s already growth."
+            "Today’s you knows more than yesterday’s you. That’s already growth.",
         ],
     },
     "tulip": {
@@ -114,7 +102,7 @@ FLOWERS = {
             "You don’t have to see progress every day for growth to be happening.",
             "Repeating something is not a waste; it’s how your brain builds pathways.",
             "Treat this session as one brick in a path, not the whole road.",
-            "Growth can be gentle. You’re allowed to adjust the pace."
+            "Growth can be gentle. You’re allowed to adjust the pace.",
         ],
     },
 }
@@ -124,12 +112,9 @@ GENERIC_TIPS = [
     "Soft focus is still focus. You don’t have to be perfect.",
     "Check in with your breath: in through the nose, out through the mouth.",
     "Notice one thing you’re grateful for in this moment.",
-    "You are allowed to take care of your mind while you work."
+    "You are allowed to take care of your mind while you work.",
 ]
 
-# -------------------------------
-# CONGRATULATORY MESSAGES
-# -------------------------------
 CONGRATS_MESSAGES = [
     "🌸 You completed the full 25 minutes — your flower has fully bloomed. Beautiful work.",
     "🌼 One calm session at a time — your focus just added a new bloom to the garden.",
@@ -140,22 +125,43 @@ CONGRATS_MESSAGES = [
     "✨ You honored your time and energy today. Your flower is glowing.",
     "🪴 Another bloom has joined the meadow, thanks to your steady presence.",
     "💛 You gave yourself 25 minutes of calm attention. That’s something to be proud of.",
-    "🌺 You finished the session — progress doesn’t need to be loud to be real."
+    "🌺 You finished the session — progress doesn’t need to be loud to be real.",
 ]
-
 
 FLOWER_CODES = list(FLOWERS.keys())
 
-# -------------------------------
-# IMAGE LOADING
-# -------------------------------
-from io import BytesIO
 
+# ------------------------------------------------------------
+# SUPABASE
+# ------------------------------------------------------------
+@st.cache_resource
+def get_supabase():
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+        return create_client(url, key)
+    except Exception:
+        return None
+
+
+supabase = get_supabase()
+
+
+def safe_insert_session(payload: dict) -> bool:
+    if supabase is None:
+        return False
+    try:
+        supabase.table("sessions").insert(payload).execute()
+        return True
+    except Exception as e:
+        st.warning(f"Supabase insert failed (non-fatal): {e}")
+        return False
+
+
+# ------------------------------------------------------------
+# IMAGES (Cloud-safe)
+# ------------------------------------------------------------
 def _safe_open_image(path: str):
-    """
-    Loads an image into memory (detached from file handle) so Streamlit can re-encode it safely.
-    Returns PIL.Image or None if it fails.
-    """
     try:
         with open(path, "rb") as f:
             data = f.read()
@@ -166,113 +172,67 @@ def _safe_open_image(path: str):
         return None
 
 
-from io import BytesIO
-
-def _safe_open_image(path: str):
-    """Load image bytes and detach from file handle (Streamlit Cloud safe)."""
-    try:
-        with open(path, "rb") as f:
-            data = f.read()
-        img = Image.open(BytesIO(data))
-        img.load()
-        return img.convert("RGBA").copy()
-    except Exception:
-        return None
-
-@st.cache_data
 def load_images():
-    # Meadow
-    meadow_img = None
+    meadow = None
     for name in ["meadow_bg.png", "meadow_bg.PNG", "meadow_bg.Png"]:
-        path = os.path.join("assets", name)
-        if os.path.exists(path):
-            meadow_img = _safe_open_image(path)
-            if meadow_img is not None:
+        p = os.path.join("assets", name)
+        if os.path.exists(p):
+            meadow = _safe_open_image(p)
+            if meadow is not None:
                 break
 
-    # Flowers by stage: flower_images[code][stage]
     flower_images = {}
     for code in FLOWER_CODES:
         stages = {}
         for stage in range(1, 5):
             p1 = os.path.join("assets", f"flower_{code}_stage{stage}.png")
             p2 = os.path.join("assets", f"flower_{code}_stage{stage}.PNG")
-            path = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
-            if path:
-                img = _safe_open_image(path)
-                if img is not None:
-                    stages[stage] = img
+            fp = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
+            if fp:
+                im = _safe_open_image(fp)
+                if im is not None:
+                    stages[stage] = im
 
-        # Fallback to single image
         if not stages:
             p1 = os.path.join("assets", f"flower_{code}.png")
             p2 = os.path.join("assets", f"flower_{code}.PNG")
-            path = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
-            if path:
-                img = _safe_open_image(path)
-                if img is not None:
-                    stages[4] = img
+            fp = p1 if os.path.exists(p1) else (p2 if os.path.exists(p2) else None)
+            if fp:
+                im = _safe_open_image(fp)
+                if im is not None:
+                    stages[4] = im
 
         flower_images[code] = stages
 
-    return meadow_img, flower_images
+    return meadow, flower_images
+
 
 meadow_img, flower_images = load_images()
 
+
 def get_flower_stage(progress: float) -> int:
-    # progress is 0.0 to 1.0
     if progress < 0.25:
         return 1
-    elif progress < 0.50:
+    if progress < 0.50:
         return 2
-    elif progress < 0.75:
+    if progress < 0.75:
         return 3
-    else:
-        return 4
+    return 4
 
 
-# -------------------------------
-# SESSION STATE
-# -------------------------------
-if "session_active" not in st.session_state:
-    st.session_state.session_active = False
-
-if "start_time" not in st.session_state:
-    st.session_state.start_time = None
-
-if "flower_code" not in st.session_state:
-    st.session_state.flower_code = "bluebell"
-
-# -------------------------------
-# PAGE CONFIG
-# -------------------------------
-st.set_page_config(
-    page_title="Collective Garden",
-    page_icon="🌱",
-    layout="centered"
-)
-try:
-    # ---- YOUR APP CODE STARTS HERE ----
-    # everything from your UI (tabs, buttons, etc.)
-    pass
-except Exception:
-    st.error("App crashed — real traceback below:")
-    st.code(traceback.format_exc())
-    st.stop()
-
-st.title("🌱 Collective Garden")
-st.caption("Grow your focus, bloom together.")
-# -------------------------------
-# USER IDENTITY (PERSIST VIA URL)
-# -------------------------------
+# ------------------------------------------------------------
+# USER NAME (persist via URL)
+# ------------------------------------------------------------
 def _get_query_param(key: str) -> str:
     val = st.query_params.get(key, "")
     if isinstance(val, list):
         return val[0] if val else ""
     return val or ""
 
+
 if "user_name" not in st.session_state:
     st.session_state.user_name = _get_query_param("u")
+
 
 def _sync_name_to_url():
     name = (st.session_state.user_name or "").strip()
@@ -284,6 +244,90 @@ def _sync_name_to_url():
         except Exception:
             pass
 
+
+# ------------------------------------------------------------
+# SESSION STATE DEFAULTS
+# ------------------------------------------------------------
+if "session_active" not in st.session_state:
+    st.session_state.session_active = False
+if "start_time" not in st.session_state:
+    st.session_state.start_time = None
+if "flower_code" not in st.session_state:
+    st.session_state.flower_code = "bluebell"
+
+if "paused" not in st.session_state:
+    st.session_state.paused = False
+if "elapsed_before_pause" not in st.session_state:
+    st.session_state.elapsed_before_pause = 0.0
+
+if "congrats_index" not in st.session_state:
+    st.session_state.congrats_index = 0
+if "last_congrats" not in st.session_state:
+    st.session_state.last_congrats = None
+
+# personal stats (local device)
+if "completed_sessions" not in st.session_state:
+    st.session_state.completed_sessions = 0
+if "total_focus_minutes" not in st.session_state:
+    st.session_state.total_focus_minutes = 0
+
+
+# ------------------------------------------------------------
+# SESSION CONTROL
+# ------------------------------------------------------------
+def start_session(selected_flower: str):
+    st.session_state.session_active = True
+    st.session_state.start_time = time.time()
+    st.session_state.flower_code = selected_flower
+    st.session_state.paused = False
+    st.session_state.elapsed_before_pause = 0.0
+
+
+def end_session(early: bool):
+    # elapsed (pause-aware)
+    elapsed = 0
+    if st.session_state.start_time:
+        if st.session_state.paused:
+            elapsed = int(st.session_state.elapsed_before_pause)
+        else:
+            elapsed = int(st.session_state.elapsed_before_pause + (time.time() - st.session_state.start_time))
+
+    completed = (not early) and (elapsed >= POMODORO_SECONDS - 1)
+
+    # reset timer state
+    st.session_state.session_active = False
+    st.session_state.start_time = None
+    st.session_state.paused = False
+    st.session_state.elapsed_before_pause = 0.0
+
+    if completed:
+        # local stats
+        st.session_state.completed_sessions += 1
+        st.session_state.total_focus_minutes += POMODORO_MINUTES
+
+        msg = CONGRATS_MESSAGES[st.session_state.congrats_index % len(CONGRATS_MESSAGES)]
+        st.session_state.congrats_index += 1
+        st.session_state.last_congrats = msg
+
+        # save to Supabase (completed only)
+        payload = {
+            "flower": st.session_state.flower_code,
+            "duration": int(elapsed),
+            "timestamp": int(time.time()),
+            "user_name": (st.session_state.user_name or "Anonymous").strip() or "Anonymous",
+        }
+        safe_insert_session(payload)
+    else:
+        st.session_state.last_congrats = None
+
+
+# ------------------------------------------------------------
+# UI
+# ------------------------------------------------------------
+st.title("🌱 Collective Garden")
+st.caption("BUILD: 2025-12-16 no-meadow-focus v1")
+st.caption("Grow your focus, Bloom together. A calm 25-minute focus app where your chosen flower grows — and completed blooms join a shared meadow.")
+
 st.text_input(
     "Your name / nickname (for your personal garden):",
     key="user_name",
@@ -291,211 +335,46 @@ st.text_input(
     on_change=_sync_name_to_url,
 )
 
-if not (st.session_state.user_name or "").strip():
-    st.info("Tip: enter a nickname so your personal garden stays after refresh 🌿")
-
-
-
 tab1, tab2 = st.tabs(["Focus Session", "Collective Meadow"])
 
-# -------------------------------
-# SESSION CONTROL FUNCTIONS
-# -------------------------------
-def start_session(selected_flower: str):
-    st.session_state.session_active = True
-    st.session_state.start_time = time.time()
-    st.session_state.flower_code = selected_flower
 
-def end_session(early: bool = False):
-    # --- 1) Calculate elapsed (account for pauses if present) ---
-    elapsed = 0
-    if st.session_state.get("start_time"):
-        paused_total = float(st.session_state.get("paused_total", 0) or 0)
-        elapsed = int(time.time() - st.session_state.start_time - paused_total)
-        if elapsed < 0:
-            elapsed = 0
-
-    # --- 2) Determine completion (only plant if fully completed) ---
-    completed = (not early) and (elapsed >= POMODORO_SECONDS - 1)
-
-    # --- 3) Reset session state so UI returns cleanly ---
-    st.session_state.session_active = False
-    st.session_state.start_time = None
-
-    # Reset pause state if you use pause/resume
-    st.session_state.paused = False
-    st.session_state.pause_start = None
-    st.session_state.paused_total = 0
-
-    # --- 4) Messaging ---
-    if early:
-        st.info("You ended the session early 🌱 Even a small moment of focus is growth.")
-    else:
-        msgs = globals().get("CONGRATS_MESSAGES") or [
-            "🌸 Beautiful work — you stayed with it!",
-            "✨ 25 minutes of focus planted a real habit.",
-            "🌿 Calm progress is still progress. Well done!",
-            "🌷 You did it — your flower is fully in bloom!",
-            "🌼 Showing up gently is real strength."
-        ]
-
-        if "congrats_index" not in st.session_state:
-            st.session_state.congrats_index = 0
-
-        msg = msgs[st.session_state.congrats_index % len(msgs)]
-        st.session_state.congrats_index += 1
-
-        st.success(msg)
-        st.balloons()
-
-    # --- 5) Save to Supabase ONLY if completed ---
-    if completed:
-        if supabase is None:
-            st.info("Supabase is offline — your bloom couldn't be saved to the global meadow this time.")
-        else:
-            payload = {
-                "flower": st.session_state.get("flower_code", "bluebell"),
-                "duration": elapsed,  # seconds
-                "timestamp": int(time.time()),
-                "user_name": (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous",
-            }
-            try:
-                supabase.table("sessions").insert(payload).execute()
-            except Exception as e:
-                st.warning(f"Supabase insert failed (non-fatal): {e}")
-
-    return {"elapsed": elapsed, "completed": completed}
-
-
-
-# -------------------------------
-# TAB 1 — FOCUS SESSION
-# -------------------------------
+# ------------------------------------------------------------
+# TAB 1 — Focus Session
+# ------------------------------------------------------------
 with tab1:
-    # --- session state defaults
-    if "session_active" not in st.session_state:
-        st.session_state.session_active = False
-    if "start_time" not in st.session_state:
-        st.session_state.start_time = None
-    if "flower_code" not in st.session_state:
-        st.session_state.flower_code = "bluebell"
-
-    if "paused" not in st.session_state:
-        st.session_state.paused = False
-    if "elapsed_before_pause" not in st.session_state:
-        st.session_state.elapsed_before_pause = 0
-
-    if "completed_sessions" not in st.session_state:
-        st.session_state.completed_sessions = 0
-    if "total_focus_minutes" not in st.session_state:
-        st.session_state.total_focus_minutes = 0
-    if "congrats_index" not in st.session_state:
-        st.session_state.congrats_index = 0
-
-    # store messages across reruns (THIS fixes “no congrats shown”)
-    if "last_congrats" not in st.session_state:
-        st.session_state.last_congrats = None
-    if "last_progress_html" not in st.session_state:
-        st.session_state.last_progress_html = None
-
-    # --- helpers
-    def start_session(selected_flower: str):
-        st.session_state.session_active = True
-        st.session_state.start_time = time.time()
-        st.session_state.flower_code = selected_flower
-        st.session_state.paused = False
-        st.session_state.elapsed_before_pause = 0
-
-    def end_session(early: bool):
-        # pause-aware elapsed
-        elapsed = 0
-        if st.session_state.start_time:
-            if st.session_state.paused:
-                elapsed = int(st.session_state.elapsed_before_pause)
-            else:
-                elapsed = int(st.session_state.elapsed_before_pause + (time.time() - st.session_state.start_time))
-
-        completed = (not early) and (elapsed >= POMODORO_SECONDS - 5)
-
-        # SAVE ONLY IF COMPLETED (and include user_name so it won't be NULL)
-        if completed and supabase is not None:
-            try:
-                supabase.table("sessions").insert({
-                    "flower": st.session_state.flower_code,
-                    "duration": elapsed,
-                    "timestamp": int(time.time()),
-                    "user_name": (st.session_state.user_name or "Anonymous").strip()
-                }).execute()
-            except Exception as e:
-                st.warning(f"Could not save session: {e}")
-
-        # Update local mini stats (optional, still nice)
-        if completed:
-            st.session_state.completed_sessions += 1
-            st.session_state.total_focus_minutes += POMODORO_MINUTES
-
-            msg = CONGRATS_MESSAGES[st.session_state.congrats_index % len(CONGRATS_MESSAGES)]
-            st.session_state.congrats_index += 1
-
-            # store for display AFTER rerun
-            st.session_state.last_congrats = msg
-            st.session_state.last_progress_html = f"""
-<div style="
-    border-radius: 16px;
-    padding: 16px 18px;
-    border: 1px solid #d8e4d8;
-    background-color: #f5fbf5;
-    margin-top: 10px;
-">
+    # show congrats after rerun
+    if st.session_state.last_congrats:
+        st.balloons()
+        st.success(st.session_state.last_congrats)
+        st.markdown(
+            f"""
+<div style="border-radius:16px;padding:16px 18px;border:1px solid #d8e4d8;background:#f5fbf5;">
   <b>🌿 Your mini progress</b><br>
   • Completed sessions: <b>{st.session_state.completed_sessions}</b><br>
   • Focused minutes: <b>{st.session_state.total_focus_minutes}</b><br>
   • Flowers grown: <b>{st.session_state.completed_sessions}</b>
 </div>
-            """
-        else:
-            st.session_state.last_congrats = None
-            st.session_state.last_progress_html = None
+""",
+            unsafe_allow_html=True,
+        )
+        st.session_state.last_congrats = None
 
-        # Reset timer state
-        st.session_state.session_active = False
-        st.session_state.start_time = None
-        st.session_state.paused = False
-        st.session_state.elapsed_before_pause = 0
-
-        if not completed:
-            st.info("🌱 Ended early — that’s okay. No flower was added this time 💛")
-
-    # ------------------------------------------------------------
-    # NOT ACTIVE (selection + start)
-    # ------------------------------------------------------------
     if not st.session_state.session_active:
-        # Show stored congrats after rerun (THIS ensures you see it)
-        if st.session_state.last_congrats:
-            st.balloons()
-            st.success(st.session_state.last_congrats)
-            if st.session_state.last_progress_html:
-                st.markdown(st.session_state.last_progress_html, unsafe_allow_html=True)
-
-            # show once
-            st.session_state.last_congrats = None
-            st.session_state.last_progress_html = None
-
         st.subheader("1) Choose your flower (intention)")
 
         selected_code = st.selectbox(
             "Which flower matches your focus mood today?",
             options=FLOWER_CODES,
             format_func=lambda c: FLOWERS[c]["label"],
-            index=FLOWER_CODES.index(st.session_state.flower_code) if st.session_state.flower_code in FLOWER_CODES else 0
+            index=FLOWER_CODES.index(st.session_state.flower_code)
+            if st.session_state.flower_code in FLOWER_CODES else 0,
         )
 
         flower_def = FLOWERS[selected_code]
         st.write(f"**Intention:** {flower_def['intention']}")
 
-        # Preview full bloom (stage 4)
         stages = flower_images.get(selected_code, {})
-        preview_img = stages.get(4) or next(iter(stages.values()), None)
+        preview_img = stages.get(4) or (next(iter(stages.values())) if stages else None)
         if preview_img is not None:
             st.image(preview_img, width=220, caption=FLOWERS[selected_code]["label"])
 
@@ -504,18 +383,19 @@ with tab1:
             start_session(selected_code)
             st.rerun()
 
-    # ------------------------------------------------------------
-    # ACTIVE SESSION
-    # ------------------------------------------------------------
     else:
         selected_code = st.session_state.flower_code
         flower_def = FLOWERS[selected_code]
 
-        # pause-aware elapsed
+        # auto-refresh the timer once per second (Cloud-safe)
+        if HAS_AUTOREFRESH and not st.session_state.paused:
+            st_autorefresh(interval=1000, key="timer_tick")
+
+        # elapsed (pause-aware)
         if st.session_state.paused:
-            elapsed = st.session_state.elapsed_before_pause
+            elapsed = float(st.session_state.elapsed_before_pause)
         else:
-            elapsed = st.session_state.elapsed_before_pause + (time.time() - st.session_state.start_time)
+            elapsed = float(st.session_state.elapsed_before_pause) + (time.time() - st.session_state.start_time)
 
         remaining = max(POMODORO_SECONDS - elapsed, 0)
         progress = min(elapsed / POMODORO_SECONDS, 1.0)
@@ -523,25 +403,20 @@ with tab1:
         minutes_left = int(remaining // 60)
         seconds_left = int(remaining % 60)
 
-        # growth stage image
         stage = get_flower_stage(progress)
         stages = flower_images.get(selected_code, {})
-        img = stages.get(stage) or stages.get(4) or next(iter(stages.values()), None)
+        img = stages.get(stage) or stages.get(4) or (next(iter(stages.values())) if stages else None)
 
-        # optional size growth too
         current_size = int(FLOWER_MIN_SIZE + (FLOWER_MAX_SIZE - FLOWER_MIN_SIZE) * progress)
 
-        # tips every 5 minutes
         block_index = int(elapsed // BLOCK_SECONDS)
         tips_source = flower_def.get("tips") or GENERIC_TIPS
         tip_text = tips_source[block_index % len(tips_source)]
 
         st.subheader(f"{flower_def['label']} — 25-minute focus")
 
-        if meadow_img is not None:
-            st.image(meadow_img)
-
-        st.markdown(f"### ⏳ {minutes_left:02d}:{seconds_left:02d} (total {POMODORO_MINUTES} min)")
+        # NOTE: no meadow image here (lighter)
+        st.markdown(f"### ⏳ {minutes_left:02d}:{seconds_left:02d}")
         st.progress(progress)
 
         if img is not None:
@@ -556,7 +431,7 @@ with tab1:
             if not st.session_state.paused:
                 if st.button("Pause ⏸️"):
                     st.session_state.paused = True
-                    st.session_state.elapsed_before_pause = elapsed
+                    st.session_state.elapsed_before_pause = float(elapsed)
                     st.rerun()
             else:
                 if st.button("Resume ▶️"):
@@ -567,47 +442,41 @@ with tab1:
         with col2:
             if st.button("End session"):
                 end_session(early=True)
+                st.info("🌱 Ended early — no flower added this time.")
                 st.rerun()
 
         with col3:
-            st.write("")
-
-        # auto-tick only if not paused
-        if not st.session_state.paused:
-            if remaining <= 0:
-                end_session(early=False)
-                st.rerun()
+            if not HAS_AUTOREFRESH:
+                if st.button("🔄 Refresh timer"):
+                    st.rerun()
             else:
-                time.sleep(1)
-                st.rerun()
+                st.write("")
 
-# -------------------------------
-# TAB 2 — COLLECTIVE MEADOW
-# -------------------------------
+        if (not st.session_state.paused) and remaining <= 0:
+            end_session(early=False)
+            st.rerun()
+
+
+# ------------------------------------------------------------
+# TAB 2 — Collective Meadow
+# ------------------------------------------------------------
 with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
-    st.caption("Tip: click **Load / Refresh meadow** to update the global garden.")
 
-    # --- Meadow must exist ---
     if meadow_img is None:
         st.error("Meadow image NOT loaded. Expected assets/meadow_bg.png")
         st.stop()
 
-    from PIL import Image
-    import random
-
     base = meadow_img.convert("RGBA")
     W, H = base.size
 
-    # --- Load rows safely (lightweight, ok to do every run) ---
+    # fetch latest rows (limit for stability)
     rows = []
     supabase_error = None
-
     if supabase is None:
         supabase_error = "Supabase is offline — global meadow won't update right now."
     else:
         try:
-            # limit rows so Cloud doesn't blow up
             rows = (
                 supabase.table("sessions")
                 .select("*")
@@ -621,7 +490,6 @@ with tab2:
             supabase_error = f"Supabase read failed: {e}"
             rows = []
 
-    # --- Counts (always show) ---
     user_name = (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous"
 
     def norm_name(x):
@@ -638,12 +506,21 @@ with tab2:
     if supabase_error:
         st.info(supabase_error)
 
-    # --- Lazy render: only do heavy PIL compositing when user asks ---
-    if not st.button("🌷 Load / Refresh meadow"):
-        st.info("Click **Load / Refresh meadow** to render the meadow image.")
+    # lazy render button to avoid heavy work every rerun
+    if "render_meadow" not in st.session_state:
+        st.session_state.render_meadow = False
+
+    colA, colB = st.columns([1, 2])
+    with colA:
+        if st.button("🌷 Load / Refresh meadow"):
+            st.session_state.render_meadow = True
+    with colB:
+        st.caption("This renders the meadow image with flowers on top (heavier).")
+
+    if not st.session_state.render_meadow:
+        st.info("Click **Load / Refresh meadow** to render the global meadow image.")
         st.stop()
 
-    # --- Heavy render starts here ---
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     rng = random.Random(42)
 
@@ -654,34 +531,27 @@ with tab2:
 
     pasted = 0
     for r in rows:
-        code = r.get("flower")  # your column name
+        code = r.get("flower")
         if not code:
             continue
-
         stages = flower_images.get(code, {})
-        bloom = stages.get(4)  # stage4
+        bloom = stages.get(4)
         if bloom is None:
             continue
 
-        bloom_rgba = bloom.convert("RGBA").resize((flower_size, flower_size))
-
+        bloom_rgba = bloom.resize((flower_size, flower_size)).convert("RGBA")
         x = rng.randint(0, max_x) if max_x > 0 else 0
         y = rng.randint(y_min, max_y) if max_y >= y_min else y_min
-
         overlay.alpha_composite(bloom_rgba, dest=(x, y))
         pasted += 1
 
     combined_rgba = Image.alpha_composite(base, overlay)
 
-    # Flatten RGBA to avoid black background
+    # flatten alpha to avoid black background
     combined_rgb = Image.new("RGB", combined_rgba.size, (255, 255, 255))
     combined_rgb.paste(combined_rgba, mask=combined_rgba.split()[-1])
 
-    st.image(
-        combined_rgb,
-        width="stretch",
-        caption=f"🌍 Global Meadow ({pasted} blooms drawn)"
-    )
+    st.image(combined_rgb, width="stretch", caption=f"🌍 Global Meadow ({pasted} blooms drawn)")
 
     if not rows:
         st.info("The meadow is still empty 🌱 Finish a full 25-minute session to plant the first bloom.")
