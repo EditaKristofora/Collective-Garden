@@ -2,3 +2,4 @@ streamlit
 Pillow
 supabase
 supabase
+streamlit-autorefresh

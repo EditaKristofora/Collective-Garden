@@ -18,6 +18,17 @@ def get_supabase():
 
 supabase = get_supabase()
 
+def safe_insert_session(payload: dict) -> bool:
+    """Never crash the app if Supabase is flaky."""
+    if supabase is None:
+        return False
+    try:
+        supabase.table("sessions").insert(payload).execute()
+        return True
+    except Exception as e:
+        st.warning(f"Supabase insert failed (non-fatal): {e}")
+        return False
+
 # -------------------------------
 # CONFIG
 # -------------------------------
@@ -279,28 +290,67 @@ def start_session(selected_flower: str):
     st.session_state.start_time = time.time()
     st.session_state.flower_code = selected_flower
 
-def end_session(early=False):
+def end_session(early: bool = False):
+    # --- 1) Calculate elapsed (account for pauses if present) ---
     elapsed = 0
-    if st.session_state.start_time:
-        elapsed = int(time.time() - st.session_state.start_time)
+    if st.session_state.get("start_time"):
+        paused_total = float(st.session_state.get("paused_total", 0) or 0)
+        elapsed = int(time.time() - st.session_state.start_time - paused_total)
+        if elapsed < 0:
+            elapsed = 0
 
-    if supabase is not None:
-        try:
-            supabase.table("sessions").insert({
-                "flower": st.session_state.flower_code,
-                "duration": elapsed,
-                "timestamp": int(time.time())
-            }).execute()
-        except Exception as e:
-            st.warning(f"Could not save session: {e}")
+    # --- 2) Determine completion (only plant if fully completed) ---
+    completed = (not early) and (elapsed >= POMODORO_SECONDS - 1)
 
+    # --- 3) Reset session state so UI returns cleanly ---
     st.session_state.session_active = False
     st.session_state.start_time = None
 
+    # Reset pause state if you use pause/resume
+    st.session_state.paused = False
+    st.session_state.pause_start = None
+    st.session_state.paused_total = 0
+
+    # --- 4) Messaging ---
     if early:
-        st.success("You ended the session early 🌱")
+        st.info("You ended the session early 🌱 Even a small moment of focus is growth.")
     else:
-        st.success("Your flower fully bloomed 🌸")
+        msgs = globals().get("CONGRATS_MESSAGES") or [
+            "🌸 Beautiful work — you stayed with it!",
+            "✨ 25 minutes of focus planted a real habit.",
+            "🌿 Calm progress is still progress. Well done!",
+            "🌷 You did it — your flower is fully in bloom!",
+            "🌼 Showing up gently is real strength."
+        ]
+
+        if "congrats_index" not in st.session_state:
+            st.session_state.congrats_index = 0
+
+        msg = msgs[st.session_state.congrats_index % len(msgs)]
+        st.session_state.congrats_index += 1
+
+        st.success(msg)
+        st.balloons()
+
+    # --- 5) Save to Supabase ONLY if completed ---
+    if completed:
+        if supabase is None:
+            st.info("Supabase is offline — your bloom couldn't be saved to the global meadow this time.")
+        else:
+            payload = {
+                "flower": st.session_state.get("flower_code", "bluebell"),
+                "duration": elapsed,  # seconds
+                "timestamp": int(time.time()),
+                "user_name": (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous",
+            }
+            try:
+                supabase.table("sessions").insert(payload).execute()
+            except Exception as e:
+                st.warning(f"Supabase insert failed (non-fatal): {e}")
+
+    return {"elapsed": elapsed, "completed": completed}
+
+
 
 # -------------------------------
 # TAB 1 — FOCUS SESSION
@@ -520,6 +570,11 @@ with tab1:
 # -------------------------------
 with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
+    from streamlit_autorefresh import st_autorefresh
+
+    st_autorefresh(interval=15_000, key="global_meadow_refresh")
+    st.caption("🌍 Global meadow updates every 15 seconds")
+
 
     # --- 0) Meadow must exist ---
     if meadow_img is None:
@@ -534,20 +589,20 @@ with tab2:
     base = meadow_img.convert("RGBA")
     W, H = base.size
 
-    # --- 1) Load rows (or fall back to empty) ---
+    # --- 1) Load rows safely from Supabase ---
     rows = []
     supabase_error = None
 
     if supabase is None:
-        supabase_error = "Supabase is offline — collective meadow won't update right now."
+        supabase_error = "Supabase is offline — global meadow won't update right now."
     else:
         try:
             rows = supabase.table("sessions").select("*").execute().data or []
         except Exception as e:
-            supabase_error = f"Could not load meadow data: {e}"
+            supabase_error = f"Supabase read failed (showing empty meadow): {e}"
             rows = []
 
-    # --- 2) Personal vs collective counts (always show) ---
+    # --- 2) Personal vs collective counts ---
     user_name = (st.session_state.get("user_name") or "Anonymous").strip() or "Anonymous"
 
     def norm_name(x):
@@ -567,29 +622,27 @@ with tab2:
 
     # --- 3) Draw flowers overlay (0 flowers is fine) ---
     overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    rng = random.Random(42)  # deterministic scatter
+    rng = random.Random(42)  # deterministic scatter (stable positions)
 
-    flower_size = 220
+    flower_size = 220  # bigger blooms
     max_x = max(0, W - flower_size)
     max_y = max(0, H - flower_size)
-    y_min = int(H * 0.40)  # lower area only for "ground"
-
-    def row_flower_code(r: dict):
-        # Support both schemas: flower_code or flower
-        return r.get("flower_code") or r.get("flower")
+    y_min = int(H * 0.40)  # lower 60% of meadow for "ground"
 
     pasted = 0
+
     for r in rows:
-        code = row_flower_code(r)
+        code = r.get("flower")  # your table column name is "flower"
         if not code:
             continue
 
         stages = flower_images.get(code, {})
-        bloom = stages.get(4)  # fully bloomed stage
+        bloom = stages.get(4)  # fully bloomed stage image
         if bloom is None:
             continue
 
         bloom_rgba = bloom.convert("RGBA").resize((flower_size, flower_size))
+
         x = rng.randint(0, max_x) if max_x > 0 else 0
         y = rng.randint(y_min, max_y) if max_y >= y_min else y_min
 
@@ -598,14 +651,14 @@ with tab2:
 
     combined_rgba = Image.alpha_composite(base, overlay)
 
-    # --- 4) Flatten RGBA so transparency doesn't turn black on display ---
+    # --- 4) Flatten RGBA (prevents black background) ---
     combined_rgb = Image.new("RGB", combined_rgba.size, (255, 255, 255))
     combined_rgb.paste(combined_rgba, mask=combined_rgba.split()[-1])  # alpha mask
 
-    # --- 5) Show ONE meadow only (combined) ---
+    # --- 5) Show ONE global meadow only ---
     st.image(
         combined_rgb,
-        use_container_width=True,
+        width="stretch",
         caption=f"🌷 Global Meadow ({pasted} blooms drawn)"
     )
 
