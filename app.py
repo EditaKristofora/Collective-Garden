@@ -3,6 +3,14 @@ from PIL import Image, ImageDraw
 import time
 import os
 from supabase import create_client
+import traceback
+
+try:
+    from streamlit_autorefresh import st_autorefresh
+    HAS_AUTOREFRESH = True
+except Exception:
+    HAS_AUTOREFRESH = False
+
 
 # -------------------------------
 # SUPABASE CLIENT
@@ -243,6 +251,14 @@ st.set_page_config(
     page_icon="🌱",
     layout="centered"
 )
+try:
+    # ---- YOUR APP CODE STARTS HERE ----
+    # everything from your UI (tabs, buttons, etc.)
+    pass
+except Exception:
+    st.error("App crashed — real traceback below:")
+    st.code(traceback.format_exc())
+    st.stop()
 
 st.title("🌱 Collective Garden")
 st.caption("Grow your focus, bloom together.")
@@ -572,8 +588,14 @@ with tab2:
     st.subheader("🌼 Collective Meadow — Shared Blossoms")
     from streamlit_autorefresh import st_autorefresh
 
-    st_autorefresh(interval=15_000, key="global_meadow_refresh")
-    st.caption("🌍 Global meadow updates every 15 seconds")
+    if HAS_AUTOREFRESH:
+        st_autorefresh(interval=15_000, key="global_meadow_refresh")
+        st.caption("🌍 Global meadow updates every 15 seconds")
+    else:
+        st.caption("🌍 Auto-refresh unavailable (showing manual refresh)")
+        if st.button("🔄 Refresh meadow"):
+            st.rerun()
+
 
 
     # --- 0) Meadow must exist ---
