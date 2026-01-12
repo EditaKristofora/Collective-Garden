@@ -240,8 +240,11 @@ with tab1:
             end_session(True)
             st.rerun()
 
-        time.sleep(1)
-        st.rerun()
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=1000, key="timer_tick")
+
+        elapsed = time.time() - st.session_state.start_time
+        
 
 # =========================================================
 # TAB 2 — COLLECTIVE MEADOW
