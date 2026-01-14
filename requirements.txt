@@ -1,5 +1,5 @@
-streamlit
-Pillow
+streamlit>=1.52.0
+pillow
 supabase
 streamlit-autorefresh
 
