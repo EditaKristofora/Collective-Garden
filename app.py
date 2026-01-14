@@ -10,9 +10,9 @@ from random import Random
 # PAGE CONFIG
 # =========================================================
 st.set_page_config(
-    page_title="Collective Meadow - Grow your focus. Bloom together",
+    page_title="Collective Meadow. Grow your focus. Bloom together",
     page_icon="🌱",
-    layout="centered"
+    layout="centered",
 )
 
 # =========================================================
@@ -24,7 +24,7 @@ TIP_BLOCK_SECONDS = 5 * 60
 
 FLOWER_MIN_SIZE = 140
 FLOWER_MAX_SIZE = 260
-MAX_MEADOW_ROWS = 200  # memory safety
+MAX_MEADOW_ROWS = 200  # hard memory cap
 
 # =========================================================
 # SUPABASE
@@ -42,26 +42,26 @@ def get_supabase():
 supabase = get_supabase()
 
 # =========================================================
-# FLOWERS (3 TYPES ONLY – STABLE)
+# FLOWERS (STABLE SET)
 # =========================================================
 FLOWERS = {
     "tulip": {
         "label": "Tulip – Growth",
         "intention": "Steady learning and long-term growth.",
         "tips": [
-            "Growth often happens quietly, beneath the surface.",
+            "Growth often happens quietly beneath the surface.",
             "Repeating small actions builds strong roots.",
-            "You don’t need to rush — consistency matters more.",
-            "Learning takes time. This session is part of it.",
-            "Every focused minute strengthens your foundation.",
+            "Consistency matters more than speed.",
+            "Learning takes time — this session counts.",
+            "Every focused minute strengthens you.",
         ],
     },
     "sunflower": {
         "label": "Sunflower – Confidence",
         "intention": "Showing up and trusting yourself.",
         "tips": [
-            "Confidence grows when you stay with the task.",
-            "You don’t need certainty to keep going.",
+            "Confidence grows by staying present.",
+            "You don’t need certainty to continue.",
             "Turning toward effort is already brave.",
             "Quiet confidence still counts.",
             "This focus is an act of self-trust.",
@@ -72,7 +72,7 @@ FLOWERS = {
         "intention": "Open, playful creative focus.",
         "tips": [
             "Ideas don’t need to be perfect yet.",
-            "Let curiosity lead this session.",
+            "Let curiosity guide you.",
             "Exploration is part of creativity.",
             "Gentle focus unlocks imagination.",
             "You’re allowed to experiment.",
@@ -132,14 +132,14 @@ if "start_time" not in st.session_state:
     st.session_state.start_time = None
 if "flower" not in st.session_state:
     st.session_state.flower = "tulip"
-if "last_msg" not in st.session_state:
-    st.session_state.last_msg = None
+if "message" not in st.session_state:
+    st.session_state.message = None
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
-if "completed_sessions" not in st.session_state:
-    st.session_state.completed_sessions = 0
-if "total_minutes" not in st.session_state:
-    st.session_state.total_minutes = 0
+if "completed" not in st.session_state:
+    st.session_state.completed = 0
+if "minutes" not in st.session_state:
+    st.session_state.minutes = 0
 
 # =========================================================
 # USER NAME
@@ -168,9 +168,9 @@ def end_session(completed):
     st.session_state.start_time = None
 
     if completed:
-        st.session_state.completed_sessions += 1
-        st.session_state.total_minutes += POMODORO_MINUTES
-        st.session_state.last_msg = "🌸 You completed 25 minutes. Your flower bloomed!"
+        st.session_state.completed += 1
+        st.session_state.minutes += POMODORO_MINUTES
+        st.session_state.message = "🌸 You completed 25 minutes — your flower bloomed!"
 
         if supabase:
             try:
@@ -183,15 +183,15 @@ def end_session(completed):
             except Exception:
                 pass
     else:
-        st.session_state.last_msg = "🌱 Session ended early. No flower added."
+        st.session_state.message = "🌱 Session ended early. No flower added."
 
 # =========================================================
-# TAB 1 — FOCUS SESSION
+# TAB 1 — FOCUS SESSION (AUTO TICK SAFE)
 # =========================================================
 with tab1:
-    if st.session_state.last_msg:
-        st.success(st.session_state.last_msg)
-        st.session_state.last_msg = None
+    if st.session_state.message:
+        st.success(st.session_state.message)
+        st.session_state.message = None
 
     if not st.session_state.active:
         code = st.selectbox(
@@ -211,6 +211,9 @@ with tab1:
             st.rerun()
 
     else:
+        from streamlit_autorefresh import st_autorefresh
+        st_autorefresh(interval=1000, key="timer")
+
         elapsed = time.time() - st.session_state.start_time
         remaining = max(POMODORO_SECONDS - elapsed, 0)
         progress = min(elapsed / POMODORO_SECONDS, 1.0)
@@ -240,14 +243,8 @@ with tab1:
             end_session(True)
             st.rerun()
 
-        from streamlit_autorefresh import st_autorefresh
-        st_autorefresh(interval=1000, key="timer_tick")
-
-        elapsed = time.time() - st.session_state.start_time
-        
-
 # =========================================================
-# TAB 2 — COLLECTIVE MEADOW
+# TAB 2 — COLLECTIVE MEADOW (MANUAL RENDER)
 # =========================================================
 with tab2:
     st.subheader("🌼 Collective Meadow")
@@ -270,6 +267,9 @@ with tab2:
         except Exception:
             rows = []
 
+    # Ignore legacy flower types safely
+    rows = [r for r in rows if r.get("flower") in FLOWER_CODES]
+
     user = st.session_state.user_name or "Anonymous"
     your = [r for r in rows if r.get("user_name") == user]
 
@@ -289,8 +289,7 @@ with tab2:
     rng = Random(42)
 
     for r in rows:
-        code = r.get("flower")
-        img = flower_images.get(code, {}).get(4)
+        img = flower_images[r["flower"]].get(4)
         if not img:
             continue
 
